@@ -1,4 +1,5 @@
 
+import os
 import logging
 import time
 from contextlib import closing
@@ -27,9 +28,13 @@ def handle_job(job):
         # Touch necessary paths through the router...
         tasks = job.tasks
         tasks.reverse()
+
+        preceding = []
         for task in tasks:
-            logger.info("requesting %s/%s",settings.ROUTER_URL,task.path())
+            path = os.path.join(task.path(),*preceding)
+            logger.info("requesting %s/%s",settings.ROUTER_URL,path)
             time.sleep(4)
+            preceding.append(task.path())
 
     with closing(Session()) as sess:
         job = sess.query(Job).get(job_id)

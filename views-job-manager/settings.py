@@ -7,7 +7,7 @@ env.read_env()
 PROD = env.bool("PRODUCTION","false")
 
 if not PROD:
-    REST_ENV_URL = env.str("REST_ENV_URL")
+    REST_ENV_URL = env.str("REST_ENV_URL",None)
 
     if REST_ENV_URL is not None:
         get_config = lambda k: requests.get(os.path.join(REST_ENV_URL),k).content.decode()
@@ -16,5 +16,6 @@ if not PROD:
         get_config = lambda k: env.str(env_friendly(k))
 
     CACHE_DIR = env.str("CACHE_DIR","cache")
+    LOG_LEVEL="INFO"
 
 ROUTER_URL = get_config("data-router-url")
