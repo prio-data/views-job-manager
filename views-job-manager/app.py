@@ -54,8 +54,12 @@ def complete_job(job):
 
     # Do job - touch router
     with closing(Session()) as sess:
-        sess.add(job)
-        sess.commit()
+        try:
+            sess.add(job)
+            sess.commit()
+        except IntegrityError:
+            logger.warning("%s already running...",str(job))
+            return
 
         url = os.path.join(settings.ROUTER_URL,job.path()+"?touch")
         logger.info("%s requesting %s",str(job),url) 
