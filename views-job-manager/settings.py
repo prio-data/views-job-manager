@@ -16,6 +16,8 @@ if not PROD:
         get_config = lambda k: env.str(env_friendly(k))
 
     CACHE_DIR = env.str("CACHE_DIR","cache")
-    LOG_LEVEL="INFO"
+    LOG_LEVEL="DEBUG"
 
 ROUTER_URL = get_config("data-router-url")
+JOB_TIMEOUT = int(get_config("job-timeout"))
+JOB_RETRY = int(get_config("job-retry"))

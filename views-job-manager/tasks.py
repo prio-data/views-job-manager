@@ -1,12 +1,14 @@
 import os
+import logging
 from hashlib import md5
 import datetime
 from typing import List,Tuple,Iterator,Any
-from collections import namedtuple 
 from pathlib import PurePath
 from sqlalchemy.ext.declarative import declarative_base
 import sqlalchemy as sa
 from sqlalchemy.orm import relationship,backref
+import settings
+logger = logging.getLogger(__name__)
 
 Base = declarative_base()
 
@@ -60,6 +62,22 @@ class Job(Base):
 
     def est_finished(self):
         return self.started_on + datetime.timedelta(seconds=self.est_duration)
+
+    def age(self):
+        return (datetime.datetime.now()-self.started_on).seconds
+
+    def expired(self):
+        return self.age() > settings.JOB_TIMEOUT
+
+    def subjobs(self):
+        todo = self.tasks[1:][::-1]
+        jobs = []
+        preceding = []
+        for task in todo:
+            path = os.path.join(self.level_of_analysis,task.path(),*preceding)
+            jobs.append(Job.parse_whole_path(path))
+            preceding.append(task.path())
+        return jobs
 
 def chunk(it:Iterator[Any],chunksize):
     assert len(it) % chunksize == 0
