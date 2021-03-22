@@ -46,7 +46,10 @@ class Job(Base):
     @classmethod
     def parse_whole_path(cls,path:str):
         level_of_analysis,*tail = PurePath(path).parts
-        chunks = [[i] + ch for i,ch in enumerate(chunk(tail,3))]
+        try:
+            chunks = [[i] + ch for i,ch in enumerate(chunk(tail,3))]
+        except AssertionError as ae:
+            raise ParsingError from ae
         tasks = [Task(destination=d,namespace=p,args=a,order_place=i) for i,d,p,a in chunks]
 
         instance = cls(id_hash=digest(path),

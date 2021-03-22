@@ -2,8 +2,6 @@ import os
 import pickle
 
 import settings
-import hashlib
-digest = lambda k: hashlib.md5(k.encode()).hexdigest()
 
 class FileSystemCache:
     def __init__(self,base_path):
@@ -12,8 +10,10 @@ class FileSystemCache:
             os.makedirs(self.base_path)
         except FileExistsError:
             pass
+
     def set(self,k,v):
         folder,_ = os.path.split(k)
+
         try:
             os.makedirs(folder)
         except FileExistsError:
@@ -21,13 +21,15 @@ class FileSystemCache:
 
         with open(self.resolve(k),"wb") as f:
             pickle.dump(v,f)
+
     def get(self,k):
         try:
             with open(self.resolve(k),"rb") as f:
                 return pickle.load(f)
-        except FileNotFoundError:
-            raise KeyError
+        except FileNotFoundError as fnf:
+            raise KeyError from fnf
+
     def resolve(self,k):
-        return os.path.join(self.base_path,digest(k))
+        return os.path.join(self.base_path,k)
 
 cache = FileSystemCache(settings.CACHE_DIR)
