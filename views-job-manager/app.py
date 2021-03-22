@@ -35,9 +35,9 @@ def dispatch(path:str,background_tasks:BackgroundTasks,session = Depends(get_ses
     try:
         result = cache.get(job.path())
     except KeyError:
-        logger.info("Running job for %s",str(job))
+        logger.info("Handling %s",str(job))
         background_tasks.add_task(handle_order,session,path)
         return Response("Handling job",status_code=202)
     else:
         logger.info("Returning %s from cache",str(job))
-        return Response(str(result))
+        return Response(result,media_type="application/octet-stream")

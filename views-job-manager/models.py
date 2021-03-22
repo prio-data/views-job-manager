@@ -52,7 +52,7 @@ class Job(Base):
             raise ParsingError from ae
         tasks = [Task(destination=d,namespace=p,args=a,order_place=i) for i,d,p,a in chunks]
 
-        instance = cls(id_hash=digest(path),
+        instance = cls(id_hash=path,#digest(path),
                 level_of_analysis=level_of_analysis,
                 tasks=tasks)
         return instance 
@@ -81,6 +81,9 @@ class Job(Base):
             jobs.append(Job.parse_whole_path(path))
             preceding.append(task.path())
         return jobs
+
+    def is_cached(self,cache):
+        return cache.exists(self.path())
 
 def chunk(it:Iterator[Any],chunksize):
     assert len(it) % chunksize == 0

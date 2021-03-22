@@ -1,5 +1,6 @@
 import os
 import pickle
+import logging
 
 import settings
 
@@ -13,6 +14,7 @@ class FileSystemCache:
 
     def set(self,k,v):
         folder,_ = os.path.split(k)
+        logging.debug("Caching to %s",os.path.abspath(k))
 
         try:
             os.makedirs(folder)
@@ -20,12 +22,16 @@ class FileSystemCache:
             pass
 
         with open(self.resolve(k),"wb") as f:
-            pickle.dump(v,f)
+            f.write(v)
+            #pickle.dump(v,f)
+
+    def exists(self,k):
+        return os.path.exists(self.resolve(k))
 
     def get(self,k):
         try:
             with open(self.resolve(k),"rb") as f:
-                return pickle.load(f)
+                return f.read()
         except FileNotFoundError as fnf:
             raise KeyError from fnf
 
