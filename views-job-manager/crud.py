@@ -99,7 +99,7 @@ def handle_order(session:Session,path:str):
             break
 
     if is_locked == 0:
-        logger.info("Job already requested")
+        logger.info("%s already requested",str(job))
         return
     if is_locked > 0:
         all_jobs = all_jobs[:is_locked+1]
