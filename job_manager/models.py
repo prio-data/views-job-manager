@@ -70,7 +70,7 @@ class Job(Base):
         return (datetime.datetime.now()-self.started_on).seconds
 
     def expired(self):
-        return self.age() > config("JOB_TIMEOUT")
+        return self.age() > int(config("JOB_TIMEOUT"))
 
     def subjobs(self):
         todo = self.tasks[1:][::-1]

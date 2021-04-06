@@ -1,8 +1,13 @@
+from typing import List
+from abc import ABC,abstractmethod
 import os
-import pickle
 import logging
-
+from azure.storage.blob import BlobServiceClient
+from azure.core.exceptions import ResourceNotFoundError
 from settings import config
+
+class NotCached(Exception):
+    pass
 
 class FileSystemCache:
     def __init__(self,base_path):
@@ -23,7 +28,6 @@ class FileSystemCache:
 
         with open(self.resolve(k),"wb") as f:
             f.write(v)
-            #pickle.dump(v,f)
 
     def exists(self,k):
         return os.path.exists(self.resolve(k))
@@ -38,4 +42,35 @@ class FileSystemCache:
     def resolve(self,k):
         return os.path.join(self.base_path,k)
 
-cache = FileSystemCache(config("CACHE_DIR"))
+class BlobStorageCache:
+    def __init__(self,*_,**__):
+        self.client = BlobServiceClient.from_connection_string(
+                    config("BLOB_STORAGE_CONNECTION_STRING"),
+                )
+        self.container_client = self.client.get_container_client(
+                    config("BLOB_STORAGE_ROUTER_CACHE"),
+                )
+    def exists(self,k):
+        try: 
+            self.get(k)
+        except NotCached:
+            return False
+        else:
+            return True
+
+    def set(self,k,v):
+        blob_client = self.container_client.get_blob_client(k)
+        blob_client.upload_blob(v)
+
+    def get(self,k):
+        try:
+            blob = (self.container_client
+                    .get_blob_client(k)
+                    .download_blob()
+                )
+        except ResourceNotFoundError as rnf:
+            raise NotCached from rnf
+
+        return blob.content_as_bytes()
+
+cache = BlobStorageCache()

@@ -41,7 +41,7 @@ def await_job(session:Session,job,retries=None):
         logging.debug("%s %s seconds old",str(job),job.age())
 
     logging.debug("Awaiting job with id %s",job_id)
-    time.sleep(config("JOB_RETRY"))
+    time.sleep(int(config("JOB_RETRY")))
 
     return await_job(session,job,retries=retries)
 
