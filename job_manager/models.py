@@ -7,7 +7,7 @@ from pathlib import PurePath
 from sqlalchemy.ext.declarative import declarative_base
 import sqlalchemy as sa
 from sqlalchemy.orm import relationship,backref
-import settings
+from settings import config
 logger = logging.getLogger(__name__)
 
 Base = declarative_base()
@@ -70,7 +70,7 @@ class Job(Base):
         return (datetime.datetime.now()-self.started_on).seconds
 
     def expired(self):
-        return self.age() > settings.JOB_TIMEOUT
+        return self.age() > config("JOB_TIMEOUT")
 
     def subjobs(self):
         todo = self.tasks[1:][::-1]

@@ -6,11 +6,11 @@ from db import Session,engine
 from cache import cache
 from crud import handle_order
 
-import settings
+from settings import config
 
 
 try:
-    logging.basicConfig(level=getattr(logging,settings.LOG_LEVEL))
+    logging.basicConfig(level=getattr(logging,config("LOG_LEVEL")))
 except AttributeError:
     pass
 logger = logging.getLogger(__name__)

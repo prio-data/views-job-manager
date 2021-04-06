@@ -5,15 +5,15 @@ from datetime import datetime
 
 import requests
 
-import settings
 from cache import cache
+from settings import config
 
 logger = logging.getLogger(__name__)
 
 def touch_router(path):
     logger.info("Fetching data from router / %s",path)
     mark = datetime.now()
-    response = requests.get(os.path.join(settings.ROUTER_URL,path))
+    response = requests.get(os.path.join(config("ROUTER_URL"),path))
     if response.status_code == 200:
         logger.info("Retrieved data from router / %s after %s seconds",
                 path, (datetime.now()-mark).seconds)

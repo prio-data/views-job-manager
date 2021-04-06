@@ -2,7 +2,7 @@ import os
 import pickle
 import logging
 
-import settings
+from settings import config
 
 class FileSystemCache:
     def __init__(self,base_path):
@@ -38,4 +38,4 @@ class FileSystemCache:
     def resolve(self,k):
         return os.path.join(self.base_path,k)
 
-cache = FileSystemCache(settings.CACHE_DIR)
+cache = FileSystemCache(config("CACHE_DIR"))

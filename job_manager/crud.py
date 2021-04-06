@@ -9,7 +9,7 @@ from sqlalchemy.exc import IntegrityError
 from models import Job
 from cache import cache
 from jobs import touch_router
-import settings
+from settings import config
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +41,7 @@ def await_job(session:Session,job,retries=None):
         logging.debug("%s %s seconds old",str(job),job.age())
 
     logging.debug("Awaiting job with id %s",job_id)
-    time.sleep(settings.JOB_RETRY)
+    time.sleep(config("JOB_RETRY"))
 
     return await_job(session,job,retries=retries)
 
