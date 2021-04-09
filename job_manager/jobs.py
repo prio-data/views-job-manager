@@ -17,7 +17,6 @@ def touch_router(path):
     if response.status_code == 200:
         logger.info("Retrieved data from router / %s after %s seconds",
                 path, (datetime.now()-mark).seconds)
-        cache.set(path,response.content)
     else:
         logger.warning("router / %s returned %s",path,str(response.status_code))
 
