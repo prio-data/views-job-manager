@@ -11,6 +11,5 @@ RUN mkdir /certs
 COPY --from=fetch-cert /root.crt /.postgresql/root.crt
 
 COPY ./job_manager/* /job_manager/
-WORKDIR /job_manager
 
-CMD ["gunicorn","-k","uvicorn.workers.UvicornWorker","--bind","0.0.0.0:80","app:app"]
+CMD ["gunicorn","-k","uvicorn.workers.UvicornWorker","--bind","0.0.0.0:80","job_manager.app:app"]
