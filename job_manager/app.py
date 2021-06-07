@@ -31,8 +31,10 @@ def get_sess():
 def dispatch(path:str,background_tasks:BackgroundTasks,session = Depends(get_sess)):
     try:
         job = Job.parse_whole_path(path)
-    except ParsingError:
-        return Response(status_code=404)
+    except ParsingError as pe:
+        return Response(str(pe), status_code=404)
+
+
 
     try:
         result = cache.get(job.path())
