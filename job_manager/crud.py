@@ -8,8 +8,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 import requests
 
-from . import models, caching, jobs, remotes
-
+from . import models, caching, remotes
 logger = logging.getLogger(__name__)
 
 class AlreadyRequested(Exception):
@@ -24,7 +23,7 @@ class JobHttpError(requests.HTTPError):
 def get_job(job_lifetime: int, session: Session, job_path: str):
     session.expire_all()
     job = session.query(models.Job).get(job_path)
-    if job is not None and (datetime.now - job.started_on).seconds > job_lifetime:
+    if job is not None and job.age() > job_lifetime:
         logger.info("Job for %s expired", job_path)
         session.delete(job)
         session.commit()
@@ -67,49 +66,87 @@ def handle_job(
 
     subjobs = main_job.subjobs()
 
+    """
+    First check if any subjobs are already running, and if so, wait until they
+    complete, then try again.
+    """
     is_locked = -1
     for idx,job in enumerate(subjobs):
         try:
             session.add(job)
             session.commit()
+            logger.debug("Added job %s", job.path)
         except IntegrityError:
+            logger.info("Job %s already exists", job.path)
+            session.rollback()
             existing = session.query(models.Job).get(job.path)
 
-            if existing.age > job_lifetime:
+            if existing.age() > job_lifetime:
+                logger.info("Job %s is expired, retrying...", job.path)
                 session.delete(existing)
                 session.commit()
                 return handle_job(
                         job_lifetime, retry_time, session, cache, api,
-                        subjobs[is_locked])
+                        main_job)
 
             is_locked = idx
             break
+        else:
+            logger.info("No jobs")
 
-    if is_locked > 0:
-        await_job(job_lifetime, retry_time, session,
-                subjobs[is_locked])
-        return handle_job(job_lifetime, retry_time, session, cache, api,
-                subjobs[is_locked + 1])
 
-    if is_locked == len(subjobs):
+    if is_locked + 1 == len(subjobs):
         logger.info("All jobs for %s already requested",main_job.path)
         raise AlreadyRequested
 
-    subjobs = subjobs[is_locked + 1:]
+    if is_locked >= 0:
+        to_await,next_job,*_ = subjobs[is_locked:]
 
+        logger.info("Waiting for job %s", to_await.path)
+        await_job(job_lifetime, retry_time, session,
+                to_await)
+
+        logger.info("Handling next job %s", next_job.path)
+        return handle_job(job_lifetime, retry_time, session, cache, api,
+                next_job)
+
+    """
+    Second, check if there are any jobs that are already cached
+    """
+
+    is_cached = -1
     done = []
 
-    # Do jobs
+    for idx, job in enumerate(subjobs):
+        if cache.exists(job.path):
+            is_cached = idx
+            done.append(job)
+        else:
+            break
+    logger.debug(f"{is_cached+1} jobs were already cached")
+    subjobs = subjobs[is_cached + 1:]
+
+    """
+    Third, do the remaining jobs
+    """
+
+    logger.debug(f"Doing {len(subjobs)} jobs")
+    error = None
     for job in subjobs:
+        """
+        Were there any errors running the job previously?
+        """
         logger.debug("Checking previous errors for %s", job.path)
-        error = models.Error.get(job.path)
-        if error.age() <= job_lifetime:
+        error = session.query(models.Error).get(job.path)
+        if error is not None and error.age() <= job_lifetime:
             error = None
 
+        """
+        Try running job (touching remote path).
+        """
         logger.debug("Doing job %s", job.path)
-
         try:
-            remotes.touch(job.path)
+            api.touch(job.path)
         except requests.HTTPError as httpe:
             logger.critical("HTTP error from %s: %s - %s",
                     job.path, httpe.response.status_code, httpe.response.content.decode())
@@ -126,7 +163,7 @@ def handle_job(
         session.commit()
 
     if error:
-        raise JobHttpError(response = error) from httpe
+        raise JobHttpError(response = error)
 
     return True
 
@@ -135,6 +172,7 @@ def post_error(session: Session, job: models.Job, response: requests.Response):
     Posts an error semaphore, which prevents subsequent tries for a job
     until it expires
     """
+
     error = models.Error(
             path = job.path,
             status_code = response.status_code,

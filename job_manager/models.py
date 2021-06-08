@@ -8,31 +8,47 @@ import sqlalchemy as sa
 from . import parsing, remotes, caching
 
 logger = logging.getLogger(__name__)
-
 Base = declarative_base()
 
-class Job(Base):
+class Timestamped:
+    timestamp = sa.Column(sa.DateTime, default = datetime.datetime.now)
+
+    def age(self):
+        """
+        Returns age (time since start) in miliseconds
+        """
+        return round((datetime.datetime.now() - self.timestamp).total_seconds() * 1000)
+
+class Job(Base, Timestamped):
     """
     A job is a list of tasks, that together comprise a remote path that must be available.
     """
     __tablename__ = "jobs"
     path = sa.Column(sa.String, primary_key = True)
-    started_on = sa.Column(sa.DateTime, default = datetime.datetime.now)
 
     tasks: List[parsing.Task]
     loa: str
 
+    def __str__(self):
+        return f"Job({self.path})"
+
     def _parse_path(self,path):
         self.loa, self.tasks = parsing.parse_path(path)
 
-    def __init__(self, path: str = None, tasks: List[parsing.Task] = None, loa: str = None):
+    def __init__(
+            self, path: str = None,
+            tasks: List[parsing.Task] = None,
+            loa: str = None):
+
         if path:
             self.path = path
             self._parse_path(path)
+
         elif tasks and loa:
             self.tasks = tasks
             self.loa = loa
             self.path = parsing.tasks_to_path(loa,tasks)
+
         else:
             TypeError("Job must be instantiated with either a path, or a list of tasks + a loa")
 
@@ -60,15 +76,9 @@ class Job(Base):
         """
         api.touch(self.path)
 
-    def age(self):
-        return (datetime.datetime.now - self.started_on).seconds
-
-class Error(Base):
+class Error(Base, Timestamped):
     __tablename__ = "errors"
-    path = sa.Column(sa.String, primary_key = True)
-    status_code = sa.column(sa.Integer)
-    content = sa.column(sa.String)
-    posted_on = sa.Column(sa.DateTime, default = datetime.datetime.now)
 
-    def age(self):
-        return (datetime.datetime.now - self.posted_on).seconds
+    path = sa.Column(sa.String, primary_key = True)
+    status_code = sa.Column(sa.Integer)
+    content = sa.Column(sa.String)

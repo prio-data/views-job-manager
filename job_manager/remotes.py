@@ -8,8 +8,8 @@ class Api:
     def touch(self,path):
         url = os.path.join(self.url, path)
         try:
-            response = requests.get(url+"?touch=true").status_code
+            response = requests.get(url+"?touch=true")
             assert response.status_code == 200
         except AssertionError:
-            raise requests.HTTPError(response = response)
+            raise requests.HTTPError(response = response) from AssertionError
 
