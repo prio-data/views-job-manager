@@ -1,11 +1,13 @@
 """
 Job CRUD.
 """
+import warnings
 import logging
 import time
+from typing import List
 from datetime import datetime
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SAWarning
 import requests
 
 from . import models, caching, remotes
@@ -19,6 +21,14 @@ class JobHttpError(requests.HTTPError):
     Raised when there is a remote HTTP error. These can't be proxied directly, since jobs are
     handled without hanging requests.
     """
+
+class Retry(Exception):
+    """
+    Raised while handling jobs, prompting a retry of the control flow
+    """
+    def __init__(self,from_job):
+        super().__init__()
+        self.from_job = from_job
 
 def get_job(job_lifetime: int, session: Session, job_path: str):
     session.expire_all()
@@ -50,32 +60,25 @@ def await_job(job_lifetime: int, retry_time: int, session:Session, job, retries 
 
     return await_job(job_lifetime, retry_time, session, job, retries=retries)
 
-def handle_job(
-        job_lifetime: int,
-        retry_time: int,
-        session:Session,
-        cache: caching.BlobStorageCache,
-        api: remotes.Api,
-        main_job: models.Job,
-        ):
+def lock_jobs(job_lifetime, session, subjobs)-> int:
     """
-    Handles a 'main_job' by trying to handle its dependent jobs one by one.
-    Can raise JobHttpError if there is a remote problem while doing the job and
-    AlreadyRequested if all of the steps are already requested (locked).
+    Lock jobs
     """
-
-    subjobs = main_job.subjobs()
-
-    """
-    First check if any subjobs are already running, and if so, wait until they
-    complete, then try again.
-    """
-    is_locked = -1
-    for idx,job in enumerate(subjobs):
+    locked = []
+    for job in subjobs:
         try:
-            session.add(job)
-            session.commit()
-            logger.debug("Added job %s", job.path)
+            # The whole point is that this is supposed to break
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", category=SAWarning)
+                session.add(job)
+                session.commit()
+
+            # The DB will only every permit one add, as such  
+            # using the IntegrityError is the safest semaphore
+            # to use when you only want the one Job.
+
+            locked.append(job)
+            logger.debug("Locked job %s", job.path)
         except IntegrityError:
             logger.info("Job %s already exists", job.path)
             session.rollback()
@@ -85,65 +88,34 @@ def handle_job(
                 logger.info("Job %s is expired, retrying...", job.path)
                 session.delete(existing)
                 session.commit()
-                return handle_job(
-                        job_lifetime, retry_time, session, cache, api,
-                        main_job)
+                raise Retry(from_job = subjobs[-1])
 
-            is_locked = idx
             break
-        else:
-            logger.info("No jobs")
 
+    return locked
 
-    if is_locked + 1 == len(subjobs):
-        logger.info("All jobs for %s already requested",main_job.path)
-        raise AlreadyRequested
-
-    if is_locked >= 0:
-        to_await,next_job,*_ = subjobs[is_locked:]
-
-        logger.info("Waiting for job %s", to_await.path)
-        await_job(job_lifetime, retry_time, session,
-                to_await)
-
-        logger.info("Handling next job %s", next_job.path)
-        return handle_job(job_lifetime, retry_time, session, cache, api,
-                next_job)
-
-    """
-    Second, check if there are any jobs that are already cached
-    """
-
-    is_cached = -1
-    done = []
-
-    for idx, job in enumerate(subjobs):
+def remove_cached_jobs(session: Session,cache: caching.BlobStorageCache,
+        jobs: List[models.Job])-> List[models.Job]:
+    cached = -1
+    for idx,job in enumerate(jobs):
         if cache.exists(job.path):
-            is_cached = idx
-            done.append(job)
-        else:
-            break
-    logger.debug(f"{is_cached+1} jobs were already cached")
-    subjobs = subjobs[is_cached + 1:]
+            logger.debug("Job %s is already cached",job.path)
+            session.delete(job)
+            cached = idx
+    session.commit()
+    logging.debug("Job no %s was cached", cached)
 
-    """
-    Third, do the remaining jobs
-    """
+    return jobs[cached+1:]
 
-    logger.debug(f"Doing {len(subjobs)} jobs")
-    error = None
-    for job in subjobs:
-        """
-        Were there any errors running the job previously?
-        """
+def do_jobs(job_lifetime: int, session: Session, api: remotes.Api,
+        jobs: List[models.Job])-> None:
+
+    for job in jobs:
         logger.debug("Checking previous errors for %s", job.path)
         error = session.query(models.Error).get(job.path)
         if error is not None and error.age() <= job_lifetime:
             error = None
 
-        """
-        Try running job (touching remote path).
-        """
         logger.debug("Doing job %s", job.path)
         try:
             api.touch(job.path)
@@ -151,21 +123,61 @@ def handle_job(
             logger.critical("HTTP error from %s: %s - %s",
                     job.path, httpe.response.status_code, httpe.response.content.decode())
             error = post_error(session, job, httpe.response)
+            raise JobHttpError(response = error)
 
-        done.append(job)
-        if error:
-            break
+def handle_job(
+        job_lifetime: int,
+        retry_time: int,
+        session:Session,
+        cache: caching.BlobStorageCache,
+        api: remotes.Api,
+        main_job: models.Job,
+        )-> None:
+    """
+    Handles a 'main_job' by trying to handle its dependent jobs one by one.
+    Can raise JobHttpError if there is a remote problem while doing the job and
+    AlreadyRequested if all of the steps are already requested (locked).
+    """
 
-    # Cleanup
-    for job in done:
-        logger.debug("Unlocking %s", job.path)
-        session.delete(job)
-        session.commit()
+    subjobs = main_job.subjobs()
 
-    if error:
-        raise JobHttpError(response = error)
+    locked_jobs = []
+    try:
+        locked_jobs = lock_jobs(job_lifetime, session, subjobs)
+        logging.debug("Locked %s jobs", len(locked_jobs))
 
-    return True
+        if len(locked_jobs) == len(subjobs) - 1:
+            """
+            The last job is currently locked by someone else, main job is pending
+            """
+            raise AlreadyRequested
+
+        if len(locked_jobs) < len(subjobs):
+            """
+            Need to wait for something else to complete.
+            """
+            await_job(job_lifetime, retry_time, session, subjobs[len(locked_jobs)])
+            raise Retry(subjobs[len(locked_jobs) + 1])
+
+    except Retry as retry:
+        """
+        Retry the control flow from the raised job
+        """
+        return handle_job(job_lifetime, retry_time, session, cache, api,
+                retry.from_job)
+
+    not_cached = remove_cached_jobs(session, cache, locked_jobs)
+    logger.debug(f"Doing {len(not_cached)} jobs")
+    try:
+        do_jobs(job_lifetime, session, api, not_cached)
+    finally:
+        for job in not_cached:
+            # Delete the rest of the jobs
+            logger.debug("Unlocking %s", job.path)
+            session.delete(job)
+            session.commit()
+
+    return None
 
 def post_error(session: Session, job: models.Job, response: requests.Response):
     """

@@ -76,11 +76,14 @@ class TestSemaphoreLogic(TestCase):
     def test_several_existing(self):
         self.cache.dict["foo/the/first/job"] = "bar"
         self.cache.dict["foo/the/second/job/the/first/job"] = "bar"
+
         self.sess.add(models.Job("foo/the/second/job/the/first/job"))
         self.sess.commit()
+
         final_url = "foo/the/third/job/the/second/job/the/first/job"
-        self.handle_job(models.Job(final_url), job_lifetime = 10, retry_time = 0.05)
-        self.assertEqual(self.api.touched[0],final_url)
+        self.handle_job(models.Job(final_url), job_lifetime = 40, retry_time = 0.05)
+
+        self.assertEqual(self.api.touched[0], final_url)
         self.assertEqual(len(self.api.touched),1)
 
     def test_already_requested(self):
