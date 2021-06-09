@@ -19,6 +19,8 @@ cache = caching.BlobStorageCache(
 
 api = remotes.Api(settings.config("ROUTER_URL"))
 
+models.Base.metadata.create_all(db.engine)
+
 app = FastAPI()
 
 def get_sess():
@@ -29,34 +31,37 @@ def get_sess():
         sess.close()
 
 @app.get("/{path:path}")
-def dispatch(path:str,background_tasks:BackgroundTasks,session = Depends(get_sess)):
-    try:
-        job = models.Job.parse_whole_path(path)
-    except parsing.ParsingError as pe:
-        return Response(str(pe), status_code=404)
-    try:
-        result = cache.get(job.path())
+def dispatch(path:str,
+        background_tasks: BackgroundTasks, session = Depends(get_sess)):
 
+    try:
+        result = cache.get(path)
     except caching.NotCached:
-        logger.debug("Checking for previous errors for %s",str(job))
-        for job in job.subjobs():
-            error = session.query(models.Error).get(job.path)
-            if error is not None:
-                return Response(
-                        f"Posted at {error.posted_at}: {error.content}",
-                        status_code = error.status_code)
-
-        logger.info("Handling %s",str(job))
-        background_tasks.add_task(crud.handle_job,
-                settings.config("JOB_TIMEOUT"),
-                settings.config("JOB_RETRY"),
-                session,
-                cache,
-                api,
-                job
-            )
-        return Response("Handling job",status_code=202)
-
+        logger.info("%s not cached", path)
     else:
-        logger.info("Returning %s from cache",str(job))
-        return Response(result,media_type="application/octet-stream")
+        logger.info("Returning %s from cache", path)
+        return Response(result, media_type="application/octet-stream")
+
+    try:
+        job = models.Job(path)
+    except parsing.ParsingError as pe:
+        logger.warning("Malformed path %s: %s", path, str(pe))
+        return Response(str(pe), status_code=404)
+
+    for subjob in job.subjobs():
+        try:
+            assert (error := session.query(models.Error).get(subjob.path)) is None
+        except AssertionError:
+            logger.warning("%s returned %s", subjob.path, error.status_code)
+            return Response(
+                    f"Posted at {error.timestamp}: " + error.content,
+                    status_code = error.status_code
+                )
+
+    background_tasks.add_task(crud.handle_job,
+            int(settings.config("JOB_TIMEOUT")), int(settings.config("JOB_RETRY")),
+            session, cache, api,
+            job
+        )
+
+    return Response("Handling job",status_code=202)

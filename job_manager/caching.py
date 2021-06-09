@@ -2,8 +2,6 @@ import logging
 from azure.storage.blob import BlobServiceClient
 from azure.core.exceptions import ResourceNotFoundError
 
-from . import models
-
 logger = logging.getLogger(__name__)
 
 class NotCached(Exception):
@@ -30,10 +28,5 @@ class BlobStorageCache:
         return blob.content_as_bytes()
 
     def exists(self,k: str):
-        try:
-            self.container_client.get_blob_client(k)
-        except ResourceNotFoundError:
-            return False
-        else:
-            return True
-
+        blob_client = self.container_client.get_blob_client(k)
+        return blob_client.exists()

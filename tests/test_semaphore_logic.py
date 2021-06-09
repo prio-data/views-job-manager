@@ -36,7 +36,7 @@ class TestSemaphoreLogic(TestCase):
         self.cache = MockCache()
 
     def handle_job(self,job, job_lifetime = 4000, retry_time = 1):
-        crud.handle_job(job_lifetime, retry_time, self.sess, self.cache, self.api, job)
+        return crud.handle_job(job_lifetime, retry_time, self.sess, self.cache, self.api, job)
 
     def test_handling_job(self):
         """
@@ -89,10 +89,7 @@ class TestSemaphoreLogic(TestCase):
     def test_already_requested(self):
         self.sess.add(models.Job("foo/al/ready/requested"))
         self.sess.commit()
-        self.assertRaises(
-                crud.AlreadyRequested,
-                self.handle_job,
-                models.Job("foo/al/ready/requested"))
+        self.assertEqual(self.handle_job(models.Job("foo/al/ready/requested")),0)
 
     @httpretty.activate()
     def test_remote_http_error(self):

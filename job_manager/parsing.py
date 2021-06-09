@@ -17,6 +17,9 @@ class Task:
     def path(self):
         return os.path.join(self.namespace,self.name,self.arguments)
 
+    def __str__(self):
+        return f"Task({self.namespace}/{self.name}/{self.arguments})"
+
 def chunk(it: Iterator[Any],chunksize) -> List[List[Any]]:
     assert len(it) % chunksize == 0
     return [it[i:i+3] for i in range(0,len(it),chunksize)]
@@ -33,7 +36,7 @@ def parse_path(path: str)-> Tuple[str, List[Task]]:
     """
 
     try:
-        assert re.search(r"^[a-z]+(?:(?:/[^/]+){3})+$", path)
+        assert re.search(r"^[^/]+(?:(?:/[^/]+){3})+$", path)
         level_of_analysis,*tail = PurePath(path).parts
         tasks = [Task(namespace,name,args) for namespace,name,args in chunk(tail,3)]
 

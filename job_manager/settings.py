@@ -8,11 +8,8 @@ Required settings:
     - JOB_RETRY
 """
 import environs
-from fitin import views_config
+import fitin
 
 env = environs.Env()
 env.read_env()
-config = fitin.seek_config([
-        fitin.dict_resolver({"JOB_TIMEOUT":4000}),
-        views_config(env.str("KEY_VAULT_URL"))
-    ])
+config = fitin.views_config(env.str("KEY_VAULT_URL"))

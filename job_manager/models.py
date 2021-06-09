@@ -1,11 +1,9 @@
 import logging
 import datetime
-import warnings
 from typing import List
 
 from sqlalchemy.ext.declarative import declarative_base
 import sqlalchemy as sa
-from sqlalchemy.exc import SAWarning 
 
 from . import parsing, remotes, caching
 
@@ -27,12 +25,16 @@ class Job(Base, Timestamped):
     """
     __tablename__ = "jobs"
     path = sa.Column(sa.String, primary_key = True)
-
     tasks: List[parsing.Task]
     loa: str
 
+    def __eq__(self,other):
+        same = type(self) is type(other)
+        same &= self.path == other.path
+        return same
+
     def __str__(self):
-        return f"Job({self.path})"
+        return f"Job({[str(task) for task in self.tasks]}"
 
     def _parse_path(self,path):
         self.loa, self.tasks = parsing.parse_path(path)
