@@ -98,9 +98,7 @@ class TestSemaphoreLogic(TestCase):
                 "http://bad-api/foo/i/will/break",
                 "Something went wrong!",
                 status = 500)
-
-        def fails():
-            crud.handle_job(10,0.05,self.sess,self.cache,remotes.Api("http://bad-api"),
-                    models.Job("foo/i/will/break")
-                    )
-        self.assertRaises(crud.JobHttpError,fails)
+        done = crud.handle_job(10,0.05,self.sess,self.cache,remotes.Api("http://bad-api"),
+                models.Job("foo/i/will/break")
+                )
+        self.assertEqual(len(self.sess.query(models.Error).all()),1)

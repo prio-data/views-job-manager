@@ -86,3 +86,11 @@ class Error(Base, Timestamped):
     path = sa.Column(sa.String, primary_key = True)
     status_code = sa.Column(sa.Integer)
     content = sa.Column(sa.String)
+
+    def json(self):
+        return {
+            "path": self.path,
+            "status_code": self.status_code,
+            "content": self.content,
+            "timestamp": self.timestamp,
+        }

@@ -30,7 +30,7 @@ def get_sess():
     finally:
         sess.close()
 
-@app.get("/{path:path}")
+@app.get("/job/{path:path}")
 def dispatch(path:str,
         background_tasks: BackgroundTasks, session = Depends(get_sess)):
 
@@ -65,3 +65,16 @@ def dispatch(path:str,
         )
 
     return Response("Handling job",status_code=202)
+
+@app.get("/errors/")
+def list_errors(session = Depends(get_sess)):
+    return {"errors":[e.json() for e in session.query(models.Error).all()]}
+
+@app.get("/errors/purge")
+def purge_errors(session = Depends(get_sess)):
+    errors = session.query(models.Error).all()
+    for error in errors:
+        session.delete(error)
+    session.commit()
+    return {"deleted":len(errors)}
+

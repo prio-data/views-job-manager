@@ -13,8 +13,6 @@ from sqlalchemy.orm.exc import ObjectDeletedError
 import requests
 
 from . import models, caching, remotes
-
-logging.basicConfig(level = logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 class AlreadyRequested(Exception):
@@ -132,7 +130,7 @@ def do_jobs(job_lifetime: int, session: Session, api: remotes.Api,
             logger.critical("HTTP error from %s: %s - %s",
                     job.path, httpe.response.status_code, httpe.response.content.decode())
             error = post_error(session, job, httpe.response)
-            raise JobHttpError(response = error)
+            break
         else:
             done += 1
     return done
