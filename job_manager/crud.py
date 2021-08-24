@@ -8,7 +8,7 @@ import time
 from typing import List,Optional,Tuple
 from datetime import datetime
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import IntegrityError, SAWarning
+from sqlalchemy.exc import IntegrityError, SAWarning, InvalidRequestError
 from sqlalchemy.orm.exc import ObjectDeletedError
 import requests
 
@@ -177,8 +177,8 @@ def handle_job(
             try:
                 session.delete(job)
                 session.commit()
-            except ObjectDeletedError:
-                pass
+            except (ObjectDeletedError, InvalidRequestError):
+                logger.warning(f"Tried to delete job {job}, but it was not persisted")
 
     return jobs_done
 
