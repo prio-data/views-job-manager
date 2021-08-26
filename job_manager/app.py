@@ -12,9 +12,8 @@ except AttributeError:
     pass
 logger = logging.getLogger(__name__)
 
-cache = caching.BlobStorageCache(
-        settings.config("BLOB_STORAGE_CONNECTION_STRING"),
-        settings.config("BLOB_STORAGE_ROUTER_CACHE")
+cache = caching.RESTCache(
+            settings.config("DATA_CACHE_URL") + "/files"
         )
 
 api = remotes.Api(settings.config("ROUTER_URL"))
