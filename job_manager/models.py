@@ -68,10 +68,10 @@ class Job(Base, Timestamped):
         subjobs.reverse()
         return subjobs
 
-    def exists(self, cache: caching.BlobStorageCache)-> bool:
+    def exists(self, cache)-> bool:
         return cache.exists(self.path)
 
-    def get_result(self, cache: caching.BlobStorageCache) -> bytes:
+    def get_result(self, cache) -> bytes:
         return cache.get(self.path)
 
     def touch(self, api: remotes.Api)-> None:

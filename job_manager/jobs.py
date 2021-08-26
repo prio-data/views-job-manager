@@ -27,7 +27,7 @@ def touch(session: Session, base_url: str, job: models.Job):
         session.commit()
         logger.warning("router / %s returned %s",path,str(response.status_code))
 
-def check(cache: caching.BlobStorageCache, job: models.Job):
+def check(cache, job: models.Job):
     """
     Checks to see if the job has been completed already
     """

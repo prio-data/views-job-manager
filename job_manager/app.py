@@ -3,13 +3,11 @@ from fastapi import FastAPI,BackgroundTasks,Response,Depends
 
 from . import db, models, caching, crud, settings, parsing, remotes
 
-logger = logging.getLogger("azure.core.pipeline.policies.http_logging_policy")
-logger.setLevel(logging.WARNING)
-
 try:
     logging.basicConfig(level=getattr(logging,settings.config("LOG_LEVEL")))
 except AttributeError:
     pass
+
 logger = logging.getLogger(__name__)
 
 cache = caching.RESTCache(
@@ -17,7 +15,6 @@ cache = caching.RESTCache(
         )
 
 api = remotes.Api(settings.config("ROUTER_URL"))
-
 models.Base.metadata.create_all(db.engine)
 
 app = FastAPI()
@@ -58,7 +55,7 @@ def dispatch(path:str,
                 )
 
     background_tasks.add_task(crud.handle_job,
-            int(settings.config("JOB_TIMEOUT")), int(settings.config("JOB_RETRY")),
+            int(settings.config.int("JOB_TIMEOUT",40000)), int(settings.config.int("JOB_RETRY",10)),
             session, cache, api,
             job
         )

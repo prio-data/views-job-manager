@@ -97,7 +97,7 @@ def lock_jobs(job_lifetime: int, session: Session,
 
     return list(locked), pending_job
 
-def remove_cached_jobs(session: Session,cache: caching.BlobStorageCache,
+def remove_cached_jobs(session: Session,cache,
         jobs: List[models.Job])-> List[models.Job]:
     cached = -1
     for idx,job in enumerate(jobs):
@@ -139,7 +139,7 @@ def handle_job(
         job_lifetime: int,
         retry_time: int,
         session:Session,
-        cache: caching.BlobStorageCache,
+        cache,
         api: remotes.Api,
         main_job: models.Job,
         )-> int:

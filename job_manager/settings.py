@@ -8,8 +8,7 @@ Required settings:
     - JOB_RETRY
 """
 import environs
-import fitin
 
 env = environs.Env()
 env.read_env()
-config = fitin.views_config(env.str("KEY_VAULT_URL"))
+config = env
