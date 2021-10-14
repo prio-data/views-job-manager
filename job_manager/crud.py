@@ -112,7 +112,11 @@ def remove_cached_jobs(session: Session,cache,
 
     return jobs[cached+1:]
 
-def do_jobs(job_lifetime: int, session: Session, api: remotes.Api,
+def do_jobs(
+        cache: caching.RESTCache, 
+        job_lifetime: 
+        int, session: Session, 
+        api: remotes.Api,
         jobs: List[models.Job])-> int:
 
     done = 0
@@ -124,7 +128,7 @@ def do_jobs(job_lifetime: int, session: Session, api: remotes.Api,
 
         logger.debug("Doing job %s", job)
         try:
-            api.touch(job.path)
+            api.touch(job.path, cache)
             logger.debug("%s done", job)
         except requests.HTTPError as httpe:
             logger.critical("HTTP error from %s: %s - %s",
@@ -139,7 +143,7 @@ def handle_job(
         job_lifetime: int,
         retry_time: int,
         session:Session,
-        cache,
+        cache: caching.RESTCache,
         api: remotes.Api,
         main_job: models.Job,
         )-> int:
@@ -166,7 +170,7 @@ def handle_job(
         logger.debug(f"Doing {len(jobs_todo)} jobs")
 
     try:
-        jobs_done = do_jobs(job_lifetime, session, api, jobs_todo)
+        jobs_done = do_jobs(cache, job_lifetime, session, api, jobs_todo)
     finally:
         if jobs_todo:
             logger.debug("Unlocking remaining jobs")

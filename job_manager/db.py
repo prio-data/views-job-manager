@@ -1,7 +1,7 @@
 
 import sqlalchemy as sa
 from sqlalchemy.orm import sessionmaker
+from . import settings
 
-engine = sa.create_engine("sqlite:///db.sqlite",connect_args={"check_same_thread": False})
+engine = sa.create_engine(settings.DATABASE_CONNECTION_STRING)
 Session = sessionmaker(bind=engine)
-

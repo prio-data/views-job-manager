@@ -1,21 +1,26 @@
 import logging
+from sqlalchemy.exc import IntegrityError
 from fastapi import FastAPI,BackgroundTasks,Response,Depends
 
 from . import db, models, caching, crud, settings, parsing, remotes
 
 try:
-    logging.basicConfig(level=getattr(logging,settings.config("LOG_LEVEL")))
+    logging.basicConfig(level=getattr(logging,settings.LOG_LEVEL))
 except AttributeError:
     pass
 
 logger = logging.getLogger(__name__)
 
 cache = caching.RESTCache(
-            settings.config("DATA_CACHE_URL") + "/files"
+            settings.DATA_CACHE_URL + "/files"
         )
 
-api = remotes.Api(settings.config("ROUTER_URL"))
-models.Base.metadata.create_all(db.engine)
+api = remotes.Api(settings.ROUTER_URL)
+
+try:
+    models.Base.metadata.create_all(db.engine)
+except IntegrityError:
+    pass
 
 app = FastAPI()
 
@@ -25,6 +30,12 @@ def get_sess():
         yield sess
     finally:
         sess.close()
+
+@app.get("/job/")
+def list_jobs(session = Depends(get_sess)):
+    jobs = session.query(models.Job).all()
+    repr = {job.path: len(job.tasks) for job in jobs}
+    return repr
 
 @app.get("/job/{path:path}")
 def dispatch(path:str,
@@ -55,7 +66,7 @@ def dispatch(path:str,
                 )
 
     background_tasks.add_task(crud.handle_job,
-            int(settings.config.int("JOB_TIMEOUT",40000)), int(settings.config.int("JOB_RETRY",10)),
+            settings.JOB_TIMEOUT, settings.JOB_RETRY,
             session, cache, api,
             job
         )
