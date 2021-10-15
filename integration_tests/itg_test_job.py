@@ -2,6 +2,7 @@
 Tests launching a job.
 Assumes that completing a job takes around 1 second.
 """
+import random
 import uuid
 import time
 from datetime import datetime
@@ -27,9 +28,10 @@ def sleep(t):
     print(f"Sleeping for {t} @ {timestamp()}")
     time.sleep(t)
 
-async def request_job(steps):
+async def request_job(steps, noise: int = 0):
     url = job_url(steps)
     print(msg(f"Getting {url}"))
+    await asyncio.sleep(random.random()*(noise/4))
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as response:
             content = await response.text()
@@ -52,7 +54,9 @@ async def test():
     status = await request_job(["y", "x"])
     while status != 200:
         status, *_ = await asyncio.gather(
-                request_job(["y","x"]),
+                request_job(["y","x"], 1),
+                request_job(["y","x"], 2),
+                request_job(["y","x"], 3),
                 check_cache(),
                 check_jobs())
 
