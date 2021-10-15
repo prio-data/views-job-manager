@@ -34,13 +34,12 @@ def get_sess():
 @app.get("/job/")
 def list_jobs(session = Depends(get_sess)):
     jobs = session.query(models.Job).all()
-    repr = {job.path: len(job.tasks) for job in jobs}
+    repr = {"jobs":[job.path for job in jobs]}
     return repr
 
 @app.get("/job/{path:path}")
 def dispatch(path:str,
         background_tasks: BackgroundTasks, session = Depends(get_sess)):
-
     try:
         result = cache.get(path)
     except caching.NotCached:
@@ -84,4 +83,3 @@ def purge_errors(session = Depends(get_sess)):
         session.delete(error)
     session.commit()
     return {"deleted":len(errors)}
-

@@ -24,7 +24,7 @@ services:
          - "5002:80"
 
    job-manager:
-      build: .
+      build: ..
       networks:
          - backend
       ports:
