@@ -2,6 +2,7 @@
 Tests launching a job.
 Assumes that completing a job takes around 1 second.
 """
+import string
 import random
 import uuid
 import time
@@ -30,12 +31,12 @@ def sleep(t):
 
 async def request_job(steps, noise: int = 0):
     url = job_url(steps)
-    print(msg(f"Getting {url}"))
+    #print(msg(f"Getting {url}"))
     await asyncio.sleep(random.random()*(noise/4))
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as response:
             content = await response.text()
-            print(msg(f"{url} returned {response.status}: {content}"))
+            #print(msg(f"{url} returned {response.status} ({content[:15]}...)"))
             status = response.status
     return status
 
@@ -47,15 +48,38 @@ async def check_cache():
 async def check_jobs():
     async with aiohttp.ClientSession() as session:
         async with session.get(settings.JOB_MANAGER_URL + "/job") as response:
-            print(msg(f"Current jobs: {await response.text()}"))
+            data = await response.json()
+            print(msg(f"Current jobs: {data['jobs']}"))
+            return data
+
 
 async def test():
     requests.delete(settings.SOURCE_URL+"/requests/")
     await util.clear_cache()
 
     responses = set()
+    n_jobs = set()
+    all_responses = set()
     while not 200 in responses:
-        responses = set(await asyncio.gather( *[request_job(["y","x"], random.randint(1,4)) for i in range(32)], check_cache(), check_jobs()))
+        jobs = await check_jobs()
+        n_jobs = n_jobs.union({len(jobs["jobs"])})
+        responses = set(await asyncio.gather( *[request_job(list(string.ascii_lowercase[:2]), random.randint(1,4)) for i in range(128)]))
+        all_responses |= responses
+        await check_cache()
+
+    try:
+        assert len(bad_responses := all_responses.difference({202,200})) == 0
+    except AssertionError:
+        print(f"Got a bad http codes: {bad_responses}")
+    else:
+        print("Only got good responses!")
+    
+    try:
+        assert all((n <= 2 for n in n_jobs))
+    except AssertionError:
+        print(f"There was, at some point, more than two jobs: {n_jobs}")
+    else:
+        print(f"Always lte two jobs: {n_jobs}")
 
     try:
         assert (n_requests := requests.get(settings.SOURCE_URL+"/requests/").json()["number_of_requests"]) == 2

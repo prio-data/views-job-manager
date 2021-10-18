@@ -33,6 +33,7 @@ services:
       environment:
          DATA_CACHE_URL: http://mock-cache
          ROUTER_URL: http://mock-source
+         #DATABASE_CONNECTION_STRING: "sqlite:////db.sqlite" 
          DATABASE_CONNECTION_STRING: postgresql://jobman:jobman@database:5432/jobman
       depends_on:
          - database
