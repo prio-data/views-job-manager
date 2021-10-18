@@ -50,15 +50,19 @@ async def check_jobs():
             print(msg(f"Current jobs: {await response.text()}"))
 
 async def test():
+    requests.delete(settings.SOURCE_URL+"/requests/")
     await util.clear_cache()
-    status = await request_job(["y", "x"])
-    while status != 200:
-        status, *_ = await asyncio.gather(
-                request_job(["y","x"], 1),
-                request_job(["y","x"], 2),
-                request_job(["y","x"], 3),
-                check_cache(),
-                check_jobs())
+
+    responses = set()
+    while not 200 in responses:
+        responses = set(await asyncio.gather( *[request_job(["y","x"], random.randint(1,4)) for i in range(32)], check_cache(), check_jobs()))
+
+    try:
+        assert (n_requests := requests.get(settings.SOURCE_URL+"/requests/").json()["number_of_requests"]) == 2
+    except AssertionError:
+        print(f"ERROR: Got {n_requests} requests!")
+    else:
+        print(f"Got {n_requests} requests, as expected.")
 
 if __name__ == "__main__":
     asyncio.run(test())
