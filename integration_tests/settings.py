@@ -1,0 +1,3 @@
+JOB_MANAGER_URL="http://0.0.0.0:5000"
+CACHE_URL="http://0.0.0.0:5001"
+SOURCE_URL="http://0.0.0.0:5002"

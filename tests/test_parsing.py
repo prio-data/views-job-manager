@@ -1,16 +1,16 @@
 
 from unittest import TestCase
-from job_manager import parsing
+from job_manager import parse 
 
 class TestParsing(TestCase):
-    def test_basic_parsing(self):
+    def test_basic_parse(self):
         success_cases = [
-                ("foo/a/b/c",("foo",[parsing.Task("a","b","c")])),
-                ("bar/1/2/3/a/b/c",("bar",[parsing.Task("1","2","3"),parsing.Task("a","b","c")])),
+                ("foo/a/b/c",("foo",[parse.Task("a","b","c")])),
+                ("bar/1/2/3/a/b/c",("bar",[parse.Task("1","2","3"),parse.Task("a","b","c")])),
             ]
 
         for case, outcome in success_cases:
-            self.assertEqual(parsing.parse_path(case), outcome)
+            self.assertEqual(parse.parse_path(case), outcome)
 
         failure_cases = [
                 "foo/a",
@@ -21,12 +21,19 @@ class TestParsing(TestCase):
 
         for case in failure_cases:
             try:
-                self.assertRaises(parsing.ParsingError, parsing.parse_path, case)
+                self.assertRaises(parse.ParsingError, parse.parse_path, case)
             except AssertionError:
                 self.fail(f"Path {case} did not raise")
 
     def test_bidirectional(self):
         base = "foo/a/b/c/1/2/3/x/y/z"
-        loa, tasks = parsing.parse_path(base)
-        result = parsing.tasks_to_path(loa,tasks)
+        loa, tasks = parse.parse_path(base)
+        result = parse.tasks_to_path(loa,tasks)
         self.assertEqual(base,result)
+
+    def test_subjobs(self):
+        base = "foo/a/b/c/1/2/2/x/y/z"
+        jobs = parse.subjobs(base)
+        self.assertListEqual(
+                jobs,
+                ["foo/x/y/z","foo/1/2/2/x/y/z", "foo/a/b/c/1/2/2/x/y/z"])
