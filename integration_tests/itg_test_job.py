@@ -30,13 +30,11 @@ def sleep(t):
     time.sleep(t)
 
 async def request_job(steps, noise: int = 0):
+    await asyncio.sleep((random.random()*(noise/8)))
     url = job_url(steps)
-    #print(msg(f"Getting {url}"))
-    await asyncio.sleep(random.random()*(noise/4))
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as response:
             content = await response.text()
-            #print(msg(f"{url} returned {response.status} ({content[:15]}...)"))
             status = response.status
     return status
 
@@ -61,10 +59,17 @@ async def test():
     n_jobs = set()
     all_responses = set()
     while not 200 in responses:
+        print("Checking jobs")
         jobs = await check_jobs()
         n_jobs = n_jobs.union({len(jobs["jobs"])})
-        responses = set(await asyncio.gather( *[request_job(list(string.ascii_lowercase[:2]), random.randint(1,4)) for i in range(128)]))
+        print("Getting jobs")
+        jobs = [request_job(list(string.ascii_lowercase[:5]), random.randint(1,4)) for i in range(25)]
+        jobs += [request_job(list(string.ascii_lowercase[:3]), random.randint(1,4)) for i in range(25)]
+        jobs += [request_job(list(string.ascii_lowercase[:7]), random.randint(1,4)) for i in range(25)]
+        responses = set(await asyncio.gather(*jobs))
+        print(f"Got {responses}")
         all_responses |= responses
+        print("Checking cache")
         await check_cache()
 
     try:

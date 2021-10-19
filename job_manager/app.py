@@ -5,7 +5,7 @@ from fastapi import FastAPI,BackgroundTasks,Response,Depends
 from . import db, models, caching, crud, settings, parsing, remotes
 
 try:
-    logging.basicConfig(level=getattr(logging,settings.LOG_LEVEL))
+    logging.basicConfig(level=getattr(logging,settings.LOG_LEVEL.upper()))
 except AttributeError:
     pass
 
@@ -33,13 +33,13 @@ def get_sess():
 
 @app.get("/job/")
 def list_jobs(session = Depends(get_sess)):
+    logger.debug("Listing jobs")
     jobs = session.query(models.Job).all()
     repr = {"jobs":[job.path for job in jobs]}
     return repr
 
 @app.get("/job/{path:path}")
-def dispatch(path:str,
-        background_tasks: BackgroundTasks, session = Depends(get_sess)):
+def dispatch(path:str, background_tasks: BackgroundTasks):
     try:
         result = cache.get(path)
     except caching.NotCached:
@@ -53,21 +53,27 @@ def dispatch(path:str,
     except parsing.ParsingError as pe:
         logger.warning("Malformed path %s: %s", path, str(pe))
         return Response(str(pe), status_code=404)
+    else:
+        logger.debug("%s parsed successfully", path)
 
-    for subjob in job.subjobs():
-        try:
-            assert (error := session.query(models.Error).get(subjob.path)) is None
-        except AssertionError:
-            logger.warning("%s returned %s", subjob.path, error.status_code)
-            return Response(
-                    f"Posted at {error.timestamp}: " + error.content,
-                    status_code = error.status_code
-                )
+    with db.Session() as session:
+        for subjob in job.subjobs():
+            logger.debug("Checking errors for %s", subjob.path)
+            try:
+                assert (error := session.query(models.Error).get(subjob.path)) is None
+            except AssertionError:
+                logger.warning("%s returned %s", subjob.path, error.status_code)
+                return Response(
+                        f"Posted at {error.timestamp}: " + error.content,
+                        status_code = error.status_code
+                    )
 
-    background_tasks.add_task(crud.handle_job,
-            settings.JOB_TIMEOUT, settings.JOB_RETRY,
-            session, cache, api,
-            job
+    logger.debug("Handling %s", job.path)
+    background_tasks.add_task(
+            crud.handle_job,
+            settings.JOB_TIMEOUT,
+            settings.JOB_RETRY,
+            db.Session, cache, api, job
         )
 
     return Response("Handling job",status_code=202)

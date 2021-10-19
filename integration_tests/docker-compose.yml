@@ -15,6 +15,10 @@ services:
          - backend
       ports:
          - "5001:80"
+      environment:
+         CAPTURE_OUTPUT: "True"
+         ACCESS_LOG_FILE: "-"
+         ERROR_LOG_FILE: "-"
 
    mock-source:
       build: ./mock-source
@@ -22,6 +26,10 @@ services:
          - backend
       ports:
          - "5002:80"
+      environment:
+         CAPTURE_OUTPUT: "True"
+         ACCESS_LOG_FILE: "-"
+         ERROR_LOG_FILE: "-"
 
    job-manager:
       build: ..
@@ -33,8 +41,10 @@ services:
       environment:
          DATA_CACHE_URL: http://mock-cache
          ROUTER_URL: http://mock-source
-         #DATABASE_CONNECTION_STRING: "sqlite:////db.sqlite" 
          DATABASE_CONNECTION_STRING: postgresql://jobman:jobman@database:5432/jobman
+         LOG_LEVEL: debug 
+         CAPTURE_OUTPUT: "True"
+         ERROR_LOG_FILE: "-"
       depends_on:
          - database
          - mock-cache 

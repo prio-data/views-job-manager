@@ -28,5 +28,5 @@ async def return_something(path: str):
     sleep_time = RETRIEVAL_TIME - (RETRIEVAL_NOISE / 2) + (random.random() * RETRIEVAL_NOISE)
     await asyncio.sleep(sleep_time)
     STATE["number_of_requests"] += 1
-    resp = b"a" * 1024 * 1024 * 10 
+    resp = b"a" * 1024 * 1024 * 5
     return Response(resp)

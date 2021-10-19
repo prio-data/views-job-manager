@@ -1,6 +1,8 @@
 """
 Job CRUD.
 """
+from typing import Callable 
+import asyncio
 from collections import deque
 import warnings
 import logging
@@ -42,7 +44,7 @@ def get_job(job_lifetime: int, session: Session, job_path: str):
         return None
     return job
 
-def await_job(job_lifetime: int, retry_time: int, session:Session, path: str, retries = 0):
+def await_job(job_lifetime: int, retry_time: int, sessionmaker: Callable[[],Session], path: str, retries = 0):
     """
     Waits for a job to either expire, or be completed (removed).
     """
@@ -50,7 +52,8 @@ def await_job(job_lifetime: int, retry_time: int, session:Session, path: str, re
     retries = retries + 1
 
     logger.debug("Checking if job for %s exists", path)
-    job = get_job(job_lifetime, session, path)
+    with sessionmaker() as session:
+        job = get_job(job_lifetime, session, path)
 
     if job is None:
         return True
@@ -59,8 +62,7 @@ def await_job(job_lifetime: int, retry_time: int, session:Session, path: str, re
             job.path, job.age(), retries)
 
     time.sleep(retry_time)
-
-    return await_job(job_lifetime, retry_time, session, path, retries=retries)
+    return await_job(job_lifetime, retry_time, sessionmaker, path, retries=retries)
 
 def lock_jobs(job_lifetime: int, session: Session,
         subjobs: List[models.Job])-> Tuple[List[models.Job], Optional[models.Job]]:
@@ -99,10 +101,11 @@ def lock_jobs(job_lifetime: int, session: Session,
 
 def remove_cached_jobs(session: Session,cache,
         jobs: List[models.Job])-> List[models.Job]:
+
     cached = -1
     for idx,job in enumerate(jobs):
         if cache.exists(job.path):
-            logger.debug("Job %s is already cached",job)
+            logger.debug("Job %s is already cached",job.path)
             session.delete(job)
             cached = idx
     session.commit()
@@ -113,36 +116,31 @@ def remove_cached_jobs(session: Session,cache,
     return jobs[cached+1:]
 
 def do_jobs(
-        cache: caching.RESTCache, 
-        job_lifetime: 
-        int, session: Session, 
+        cache: caching.RESTCache,
+        job_lifetime: int,
+        session: Session,
         api: remotes.Api,
         jobs: List[models.Job])-> int:
 
-    done = 0
     for job in jobs:
-        logger.debug("Checking previous errors for %s", job)
+        logger.debug("Checking previous errors for %s", job.path)
         error = session.query(models.Error).get(job.path)
         if error is not None and error.age() <= job_lifetime:
             error = None
 
-        logger.debug("Doing job %s", job)
+        logger.debug("Doing job %s", job.path)
         try:
             api.touch(job.path, cache)
-            logger.debug("%s done", job)
         except requests.HTTPError as httpe:
             logger.critical("HTTP error from %s: %s - %s",
                     job.path, httpe.response.status_code, httpe.response.content.decode())
             error = post_error(session, job, httpe.response)
             break
-        else:
-            done += 1
-    return done
 
 def handle_job(
         job_lifetime: int,
         retry_time: int,
-        session:Session,
+        sessionmaker: Callable[[], Session],
         cache: caching.RESTCache,
         api: remotes.Api,
         main_job: models.Job,
@@ -152,39 +150,39 @@ def handle_job(
     Can raise JobHttpError if there is a remote problem while doing the job and
     AlreadyRequested if all of the steps are already requested (locked).
     """
-    subjobs = main_job.subjobs()
+    with sessionmaker() as session:
+        subjobs = main_job.subjobs()
 
-    locked_jobs, pending = lock_jobs(job_lifetime, session, subjobs)
+        locked_jobs, pending = lock_jobs(job_lifetime, session, subjobs)
 
-    logger.debug("Locked %s jobs", len(locked_jobs))
+        logger.debug("Locked %s jobs", len(locked_jobs))
+        wait_for = pending.path if pending is not None else None
 
-    if pending:
-        if pending == main_job:
-            logger.info("%s is already requested", main_job)
+        job_paths = [job.path for job in locked_jobs]
+
+    if wait_for is not None:
+        if wait_for == main_job.path:
+            return
         else:
-            await_job(job_lifetime, retry_time, session, pending.path)
+            await_job(job_lifetime, retry_time, sessionmaker, wait_for)
 
-    jobs_todo = remove_cached_jobs(session, cache, locked_jobs)
+    with sessionmaker() as session:
+        locked_jobs = [job for job in [session.query(models.Job).get(p) for p in job_paths] if job is not None]
+        jobs_todo = remove_cached_jobs(session, cache, locked_jobs)
 
-    if jobs_todo:
-        logger.debug(f"Doing {len(jobs_todo)} jobs")
+        if len(jobs_todo) > 0:
+            logger.debug(f"Doing {len(jobs_todo)} jobs")
 
-    try:
-        jobs_done = do_jobs(cache, job_lifetime, session, api, jobs_todo)
-    finally:
-        if jobs_todo:
-            logger.debug("Unlocking remaining jobs")
-
-        for job in jobs_todo:
-            logger.debug("Unlocking %s", job)
-            # Delete the rest of the jobs
             try:
-                session.delete(job)
-                session.commit()
-            except (ObjectDeletedError, InvalidRequestError):
-                logger.warning(f"Tried to delete job {job}, but it was not persisted")
-
-    return jobs_done
+                do_jobs(cache, job_lifetime, session, api, jobs_todo)
+            finally:
+                for job in jobs_todo:
+                    logger.debug("Unlocking %s", job.path)
+                    try:
+                        session.delete(job)
+                        session.commit()
+                    except (ObjectDeletedError, InvalidRequestError):
+                        logger.warning(f"Tried to delete job {job}, but it was not persisted")
 
 def post_error(session: Session, job: models.Job, response: requests.Response):
     """

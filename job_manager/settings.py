@@ -13,7 +13,7 @@ env = environs.Env()
 env.read_env()
 config = env
 
-LOG_LEVEL = "WARNING"
+LOG_LEVEL = env.str("LOG_LEVEL", "WARNING")
 
 DATA_CACHE_URL = env.str("DATA_CACHE_URL")
 ROUTER_URL = env.str("ROUTER_URL")
