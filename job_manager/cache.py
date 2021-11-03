@@ -30,10 +30,6 @@ class RESTCache:
                     return await resp.read()
 
     async def exists(self,key: str):
-        try:
-            await self.get(key)
-        except NotCached:
-            return False
-        else:
-            return True
-
+        async with aiohttp.ClientSession() as session:
+            async with session.head(self.url(key)) as response:
+                return str(response.status)[0] == "2"
