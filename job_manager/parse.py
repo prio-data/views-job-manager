@@ -44,3 +44,7 @@ def parse_path(path: str)-> Tuple[str, List[Task]]:
         raise ParsingError(f"Could not parse path: {path}") from ae
 
     return level_of_analysis, tasks
+
+def subjobs(path: str) -> List[str]:
+    loa, tasks = parse_path(path)
+    return [tasks_to_path(loa, tasks[-i-1:]) for i in range(len(tasks))]

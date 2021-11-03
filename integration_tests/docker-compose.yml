@@ -1,0 +1,49 @@
+
+services:
+   jobman-redis:
+      image: redis 
+      networks:
+         - backend
+
+   mock-cache:
+      build: ./mock-cache
+      networks:
+         - backend
+      ports:
+         - "5001:80"
+      environment:
+         CAPTURE_OUTPUT: "True"
+         ACCESS_LOG_FILE: "-"
+         ERROR_LOG_FILE: "-"
+
+   mock-source:
+      build: ./mock-source
+      networks:
+         - backend
+      ports:
+         - "5002:80"
+      environment:
+         CAPTURE_OUTPUT: "True"
+         ACCESS_LOG_FILE: "-"
+         ERROR_LOG_FILE: "-"
+
+   job-manager:
+      build: ..
+      networks:
+         - backend
+      ports:
+         - "5000:80"
+
+      environment:
+         DATA_CACHE_URL: http://mock-cache
+         ROUTER_URL: http://mock-source
+         LOG_LEVEL: INFO 
+         CAPTURE_OUTPUT: "True"
+         ERROR_LOG_FILE: "-"
+      depends_on:
+         - jobman-redis 
+         - mock-cache 
+         - mock-source 
+
+networks:
+  backend:

@@ -1,15 +1,12 @@
 import os
-import requests
+import aiohttp
 
 class Api:
     def __init__(self, url):
         self.url = url
-
-    def touch(self,path):
+    async def touch(self,path):
         url = os.path.join(self.url, path)
-        try:
-            response = requests.get(url+"?touch=true")
-            assert response.status_code == 200
-        except AssertionError:
-            raise requests.HTTPError(response = response) from AssertionError
-
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                content = await response.read()
+                return (response.status, content)
