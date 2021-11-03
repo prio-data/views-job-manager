@@ -36,7 +36,7 @@ async def request_job_computation(client_creator, subjobs):
 
         if is_cached or in_progress:
             if is_cached:
-                client.delete([keys.job(job)])
+                await client.delete([keys.job(job)])
                 logger.info(f"{job} was cached")
             if in_progress:
                 logger.info(f"{job} was in progress")
@@ -55,7 +55,7 @@ async def request_job_computation(client_creator, subjobs):
                 break
 
             logger.info(f"Waiting for {pending}")
-            pending_was_finished = cache_client.exists(pending)
+            pending_was_finished = await cache_client.exists(pending)
             await asyncio.sleep(1)
 
         return await request_job_computation(client_creator, subjobs)
