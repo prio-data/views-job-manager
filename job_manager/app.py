@@ -28,6 +28,7 @@ async def request_job_computation(client_creator, subjobs):
     client = await client_creator()
     todo = deque()
 
+    pending = None
     for job in subjobs[::-1]:
         is_cached = await cache_client.exists(job)
 
@@ -40,11 +41,13 @@ async def request_job_computation(client_creator, subjobs):
                 logger.info(f"{job} was cached")
             if in_progress:
                 logger.info(f"{job} was in progress")
+                pending = job
             break
         todo.appendleft(job)
 
-    if len(todo) != len(subjobs) and len(todo) > 0:
-        pending = subjobs[len(todo)]
+    if pending is not None and len(todo) > 0:
+        logger.debug(f"Pending jobs: {pending}")
+        logger.debug(f"Jobs todo: {todo}")
 
         pending_was_finished = False
         retries = 0
