@@ -1,4 +1,5 @@
 
+import re
 import logging
 from collections import deque
 from datetime import datetime
@@ -103,6 +104,8 @@ async def get_job(
         except AssertionError:
             pass
         else:
+            code = re.search("[0-9]{3}", error)
+            code = int(code) if code else 500
             try:
                 code, message = error.split(":")
             except ValueError:
