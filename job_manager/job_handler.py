@@ -38,7 +38,7 @@ class JobHandler():
         self._max_retries        = max_retries
         self._check_errors_every = check_errors_every
 
-    def close(self):
+    async def close(self):
         """
         close
         =====
@@ -47,7 +47,7 @@ class JobHandler():
         Remember to do this!
 
         """
-        self._locks_client.close()
+        await self._locks_client.close()
 
     async def _do_job(self, path: str)-> Tuple[int, str]:
         """
@@ -153,11 +153,11 @@ class JobHandler():
                 self._locks_client.cleanup()
                 return await self.handle_jobs(jobs)
             else:
-                todo = deque() 
+                todo = deque()
 
         await self._do_jobs(todo)
         await self._locks_client.cleanup()
-        self._locks_client.close()
+        await self._locks_client.close()
 
     async def _do_jobs(self, todo: Deque[str])-> None:
         """

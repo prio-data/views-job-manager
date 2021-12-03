@@ -1,6 +1,7 @@
 from io import BytesIO
 import logging
 import aiohttp
+
 logger = logging.getLogger(__name__)
 
 class NotCached(Exception):
@@ -16,8 +17,11 @@ class RESTCache:
     async def set(self,key,content):
         async with aiohttp.ClientSession() as session:
             async with session.post(self.url(key), data = {"file": BytesIO(content)}) as resp:
-                await resp.text()
-                assert str(resp.status)[0] == "2"
+                text = await resp.text()
+                try:
+                    assert str(resp.status)[0] == "2"
+                except AssertionError:
+                    raise ValueError(f"Remote returned {resp.status}: {text} when trying to cache {key}")
 
     async def get(self,key):
         async with aiohttp.ClientSession() as session:

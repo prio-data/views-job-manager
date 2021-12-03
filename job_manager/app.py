@@ -11,40 +11,34 @@ redis_logger.setLevel(logging.WARNING)
 
 app = FastAPI()
 
-async def with_api_client():
-    try:
-        client = remotes.Api(settings.ROUTER_URL)
-        yield client
-    finally:
-        pass
+get_api = lambda: remotes.Api(settings.ROUTER_URL)
+get_cache = lambda: cache.RESTCache(settings.DATA_CACHE_URL+"/files")
+get_locks = lambda: redis_locks.RedisLocks(settings.REDIS_HOST, settings.REDIS_PORT, settings.REDIS_DB, settings.REDIS_ERROR_KEY_PREFIX, settings.REDIS_JOB_KEY_PREFIX)
 
-async def with_rest_cache():
+def with_rest_cache():
     try:
-        client = cache.RESTCache(settings.DATA_CACHE_URL)
+        client = get_cache()
         yield client
     finally:
         pass
 
 async def with_locks_client():
     try:
-        client = redis_locks.RedisLocks(settings.REDIS_HOST, settings.REDIS_PORT, settings.REDIS_DB, settings.REDIS_ERROR_KEY_PREFIX, settings.REDIS_JOB_KEY_PREFIX)
+        client = get_locks()
         yield client
     finally:
-        client.close()
+        await client.close()
 
-async def with_job_handler(
-        api_client: remotes.Api = Depends(with_api_client),
-        cache_client: cache.RESTCache = Depends(with_rest_cache),
-        locks_client: redis_locks.RedisLocks = Depends(with_locks_client)):
+async def dispatch_jobs(jobs: List[str]):
     try:
-        client = job_handler.JobHandler(api_client, cache_client, locks_client,
-                settings.RETRY_SLEEP, settings.MAX_RETRIES, settings.CHECK_ERRORS_EVERY)
-        yield client
-    finally:
-        client.close()
+        api, cache, locks = get_api() ,get_cache(), get_locks()
+        handler = job_handler.JobHandler(api, cache, locks,
+                    settings.RETRY_SLEEP, settings.MAX_RETRIES, settings.CHECK_ERRORS_EVERY)
 
-async def dispatch_jobs(jobs: List[str], handler: job_handler.JobHandler = Depends(with_job_handler)):
-    handler.handle_jobs(jobs)
+        await handler.handle_jobs(jobs)
+    finally:
+        await locks.cleanup()
+        await locks.close()
 
 @app.get("/job/")
 async def list_jobs(locks: redis_locks.RedisLocks = Depends(with_locks_client)):
@@ -58,7 +52,10 @@ async def get_job(
         locks_client: redis_locks.RedisLocks = Depends(with_locks_client),
         cache_client: cache.RESTCache = Depends(with_rest_cache)):
 
-    requested_jobs = parse.subjobs(path)
+    try:
+        requested_jobs = parse.subjobs(path)
+    except parse.ParsingError:
+        return Response(content = f"Could not parse as job path: {path}", status_code = 404)
 
     for job in requested_jobs:
         try:
@@ -82,9 +79,9 @@ async def get_job(
 @app.get("/errors/")
 async def get_errors(locks_client: redis_locks.RedisLocks = Depends(with_locks_client)):
     errors = await locks_client.errors()
-    return errors
+    return {"errors": errors}
 
 @app.get("/errors/purge/")
 async def delete_errors(locks_client: redis_locks.RedisLocks = Depends(with_locks_client)):
-    locks_client.clear_errors()
+    await locks_client.clear_errors()
     return Response(status_code = 204)

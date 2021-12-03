@@ -7,4 +7,5 @@ gunicorn==20.1.0
 pottery==1.4.6
 redis==3.5.3
 environs==9.3.4
-asyncio-redis==0.16.0
+aioredis==2.0.0
+hiredis==2.0.0
