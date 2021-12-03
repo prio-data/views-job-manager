@@ -53,8 +53,9 @@ async def request_job_computation(client_creator, subjobs):
         pending_was_finished = False
         retries = 0
         while not pending_was_finished:
+            retries += 1
             if retries > settings.MAX_RETRIES:
-                logger.info(f"Exceeded max retries while waiting for {pending}")
+                logger.critical(f"Exceeded max retries while waiting for {pending}")
                 todo = []
                 break
 
@@ -65,7 +66,14 @@ async def request_job_computation(client_creator, subjobs):
         return await request_job_computation(client_creator, subjobs)
 
     for job in todo:
-        status, content = await do_job(job)
+        try:
+            status, content = await do_job(job)
+
+        except asyncio.exceptions.TimeoutError:
+            logger.critical(f"Job {job} timed out!!")
+            await client.set(keys.error(job), f"500: {job} timed out", expire = 400)
+            todo = []
+
         if status == 200:
             logger.info(f"Caching {job}")
             await cache_client.set(job, content)
