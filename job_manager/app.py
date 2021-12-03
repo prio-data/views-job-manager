@@ -113,7 +113,7 @@ async def get_job(
             pass
         else:
             code = re.search("[0-9]{3}", error)
-            code = int(code) if code else 500
+            code = int(code[0]) if code else 500
             try:
                 code, message = error.split(":")
             except ValueError:
