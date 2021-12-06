@@ -134,7 +134,7 @@ class RedisLocks():
         connection = await self._connection()
 
         error_keys = await connection.keys(self._errorname("*"))
-        return [*error_keys]
+        return [k.decode() for k in error_keys]
 
     async def errors(self)-> Dict[str, Dict[str, str]]:
         """
