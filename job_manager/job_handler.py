@@ -62,6 +62,7 @@ class JobHandler():
         upstream.
 
         """
+        logger.info(f"Doing job {path}")
         return await self._api_client.touch(path)
 
     async def lock_jobs(self, potential_jobs) -> Tuple[Optional[str], Deque[str]]:
@@ -80,8 +81,10 @@ class JobHandler():
         todo = deque()
 
         for job in potential_jobs[::-1]:
+            logger.info(f"Checking if {job} can be performed")
             is_cached = await self._cache_client.exists(job)
-            in_progress = not self._locks_client.lock(job)
+            lock = await self._locks_client.lock(job)
+            in_progress = not lock
 
             if is_cached or in_progress:
                 if is_cached:
@@ -135,7 +138,7 @@ class JobHandler():
                 retries += 1
 
                 if (retries % self._check_errors_every) == 0:
-                    if (error := self._locks_client.get_error(pending) is not None):
+                    if (error := self._locks_client.get_error(pending)) is not None:
                         logger.critical(f"{pending} returned an error: {error}")
                         pending_succeeding = False
 

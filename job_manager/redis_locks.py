@@ -90,6 +90,9 @@ class RedisLocks():
 
         if (success := did_lock is not None):
             self._has_locked = self._has_locked | {job}
+            logging.debug(f"Locked job {job}")
+        else:
+            logging.debug(f"Failed to lock {job}")
         return success
 
     async def unlock(self, job: str, force: bool = False)-> bool:
@@ -134,6 +137,7 @@ class RedisLocks():
         connection = await self._connection()
 
         error_keys = await connection.keys(self._errorname("*"))
+        logger.debug("Found {len(error_keys)}")
         return [k.decode() for k in error_keys]
 
     async def errors(self)-> Dict[str, Dict[str, str]]:
