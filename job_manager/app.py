@@ -2,7 +2,7 @@
 from typing import List
 import logging
 from fastapi import Depends, Response, FastAPI, BackgroundTasks
-from . import settings, parse, remotes, cache, job_handler, redis_locks
+from . import settings, parse, remotes, caching, job_handler, redis_locks
 
 logging.basicConfig(level = getattr(logging, settings.LOG_LEVEL))
 logger = logging.getLogger(__name__)
@@ -12,7 +12,7 @@ redis_logger.setLevel(logging.WARNING)
 app = FastAPI()
 
 get_api = lambda: remotes.Api(settings.ROUTER_URL)
-get_cache = lambda: cache.RESTCache(settings.DATA_CACHE_URL+"/files")
+get_cache = lambda: caching.RESTCache(settings.DATA_CACHE_URL+"/files")
 get_locks = lambda: redis_locks.RedisLocks(settings.REDIS_HOST, settings.REDIS_PORT, settings.REDIS_DB, settings.REDIS_ERROR_KEY_PREFIX, settings.REDIS_JOB_KEY_PREFIX)
 
 def with_rest_cache():
@@ -50,7 +50,7 @@ async def get_job(
         path: str,
         background_tasks: BackgroundTasks,
         locks_client: redis_locks.RedisLocks = Depends(with_locks_client),
-        cache_client: cache.RESTCache = Depends(with_rest_cache)):
+        cache_client: caching.RESTCache = Depends(with_rest_cache)):
 
     try:
         requested_jobs = parse.subjobs(path)
@@ -67,7 +67,7 @@ async def get_job(
 
     try:
         content = await cache_client.get(requested_jobs[-1])
-    except cache.NotCached:
+    except caching.NotCached:
         pass
     else:
         return Response(content)

@@ -2,7 +2,7 @@ import asyncio
 from typing import Deque, Tuple, Optional, List
 from collections import deque
 import logging
-from . import remotes, cache, redis_locks
+from . import remotes, caching, redis_locks
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +13,7 @@ class JobHandler():
 
     parameters:
         api_client (views_job_manager.remotes.Api)
-        cache_client (views_job_manager.cache.RESTCache)
+        cache_client (views_job_manager.caching.RESTCache)
         locks_client (views_job_manager.redis_locks.RedisLocks)
 
         retry_cooldown (int):     How long to wait between each retry
@@ -24,14 +24,14 @@ class JobHandler():
     """
     def __init__(self,
             api_client:         remotes.Api,
-            cache_client:       cache.RESTCache,
+            cache_client:       caching.RESTCache,
             locks_client:       redis_locks.RedisLocks,
             retry_cooldown:     int = 5,
             max_retries:        int = 50,
             check_errors_every: int = 5):
 
         self._api_client: remotes.Api             = api_client
-        self._cache_client: cache.RESTCache       = cache_client
+        self._cache_client: caching.RESTCache       = cache_client
         self._locks_client: redis_locks.RedisLocks = locks_client
 
         self._retry_cooldown     = retry_cooldown
