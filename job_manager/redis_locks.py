@@ -137,8 +137,8 @@ class RedisLocks():
         connection = await self._connection()
 
         error_keys = await connection.keys(self._errorname("*"))
-        logger.debug("Found {len(error_keys)}")
-        return [k.decode() for k in error_keys]
+        logger.debug(f"Found {len(error_keys)} errors")
+        return [self._strip_error_prefix(k.decode()) for k in error_keys]
 
     async def errors(self)-> Dict[str, Dict[str, str]]:
         """
@@ -154,13 +154,14 @@ class RedisLocks():
 
         errors: Dict[str, Dict[str, str]] = {}
         for e in error_keys:
+            logger.debug(f"Fetching error for {e}")
             code_and_message = await self.error_code_and_message(e)
             if code_and_message is not None:
                 code, message = code_and_message
                 error_message = {"code": code, "message": message}
                 errors[e] = error_message
             else:
-                pass
+                logger.debug(f"Found no error message for {e}")
 
         return errors
 
@@ -177,7 +178,7 @@ class RedisLocks():
         keys = await self.error_keys()
 
         for k in keys:
-            await connection.delete(k)
+            await connection.delete(self._errorname(k))
 
     async def get_error(self, job: str)-> Optional[str]:
         """
@@ -197,18 +198,19 @@ class RedisLocks():
         else:
             return None
 
-    async def error_code_and_message(self, job: str) -> Optional[Tuple[int, str]]:
+    async def error_code_and_message(self, name: str) -> Optional[Tuple[int, str]]:
         """
         error_code_and_message
         ======================
 
         parameters:
-            job (str):                 The name of the job to check error condition for
+            name (str):                 The name of the job to check error condition for
 
         returns:
             Optional[Tuple[int, str]]: HTTP status code : message if error exists
         """
-        if (raw_message := await self.get_error(job)):
+        raw_message = await self.get_error(name)
+        if raw_message is not None:
             if (code_search := re.search("[0-9]{3}", raw_message)) is not None:
                 http_code = int(code_search[0])
             else:
@@ -239,13 +241,16 @@ class RedisLocks():
         connection = await self._connection()
 
         logger.critical(f"Job {job} returned error {status}: {message}")
-        return await connection.set(self._errorname(job), "{status}: {message}", ex = self._error_expiry_time)
+        return await connection.set(self._errorname(job), f"{status}: {message}", ex = self._error_expiry_time)
 
     def _jobname(self, jobname: str):
         return self._job_prefix + jobname
 
     def _errorname(self, errorname: str):
         return self._error_prefix + errorname
+
+    def _strip_error_prefix(self, key: str)-> str:
+        return key.replace(self._error_prefix,"")
 
     def _unpack_keys(self, keys):
         return [*keys]
