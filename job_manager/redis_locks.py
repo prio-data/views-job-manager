@@ -1,8 +1,10 @@
-from typing import Tuple, List, Optional, Set, Dict
-import re
+import asyncio
+import json
+from typing import List, Optional, Set, Dict
 import logging
 from datetime import datetime
 import aioredis
+from . import models
 
 logger = logging.getLogger(__name__)
 
@@ -140,7 +142,7 @@ class RedisLocks():
         logger.debug(f"Found {len(error_keys)} errors")
         return [self._strip_error_prefix(k.decode()) for k in error_keys]
 
-    async def errors(self)-> Dict[str, Dict[str, str]]:
+    async def errors(self)-> Dict[str, models.Error]:
         """
         errors
         ====
@@ -152,16 +154,15 @@ class RedisLocks():
         """
         error_keys = await self.error_keys()
 
-        errors: Dict[str, Dict[str, str]] = {}
-        for e in error_keys:
-            logger.debug(f"Fetching error for {e}")
-            code_and_message = await self.error_code_and_message(e)
-            if code_and_message is not None:
-                code, message = code_and_message
-                error_message = {"code": code, "message": message}
-                errors[e] = error_message
+        errors: Dict[str, models.Error] = {}
+
+        for key in error_keys:
+            logger.debug(f"Fetching error for {key}")
+            error = await self.get_error(key)
+            if error:
+                errors[key] = error
             else:
-                logger.debug(f"Found no error message for {e}")
+                logger.debug(f"Found no error message for {key}")
 
         return errors
 
@@ -180,7 +181,7 @@ class RedisLocks():
         for k in keys:
             await connection.delete(self._errorname(k))
 
-    async def get_error(self, job: str)-> Optional[str]:
+    async def get_error(self, job: str)-> Optional[models.Error]:
         """
         get_error
         =========
@@ -189,39 +190,17 @@ class RedisLocks():
             job (str):     The name of the job to check error condition for
 
         returns:
-            Optional[str]: Raw error message if exists
+            Optional[models.Error]: Raw error message if exists
         """
         connection = await self._connection()
         raw_error = await connection.get(self._errorname(job))
         if raw_error:
-            return raw_error.decode()
-        else:
-            return None
-
-    async def error_code_and_message(self, name: str) -> Optional[Tuple[int, str]]:
-        """
-        error_code_and_message
-        ======================
-
-        parameters:
-            name (str):                 The name of the job to check error condition for
-
-        returns:
-            Optional[Tuple[int, str]]: HTTP status code : message if error exists
-        """
-        raw_message = await self.get_error(name)
-        if raw_message is not None:
-            if (code_search := re.search("[0-9]{3}", raw_message)) is not None:
-                http_code = int(code_search[0])
-            else:
-                http_code = 500
-
             try:
-                _, message = raw_message.split(":")
-            except ValueError:
-                message = raw_message
-            return http_code, message
-
+                return models.Error(**json.loads(raw_error.decode()))
+            except json.JSONDecodeError:
+                err = models.Error(status_code = 500, message = f"Failed to decode json error: {raw_error}", posted_at = datetime.now())
+                await connection.set(self._errorname(job), err.json())
+                return err
         else:
             return None
 
@@ -238,10 +217,38 @@ class RedisLocks():
         Flag an error condition for a job
 
         """
-        connection = await self._connection()
+        error = models.Error(http_status_code = status, message = message, posted_at = datetime.now())
+        logger.critical(f"Job {job} returned error {error}")
+        return await self.update_error(job, error)
 
-        logger.critical(f"Job {job} returned error {status}: {message}")
-        return await connection.set(self._errorname(job), f"{status}: {message}", ex = self._error_expiry_time)
+    async def update_error(self, job: str, error: models.Error):
+        """
+        update_error
+        ============
+
+        parameters:
+            job (str):            The name of the job
+            error (models.Error): A models.Error object to set to the key.
+
+        Flag an error condition for a job
+
+        """
+
+        connection = await self._connection()
+        await connection.set(self._errorname(job), error.json(), ex = self._error_expiry_time)
+
+    async def retry_error(self, job: str, max_retries: int, cooldown: int)-> Optional[models.Error]:
+        error = await self.get_error(job)
+        if error:
+            if error.retryable and error.retries < max_retries:
+                logger.warning("Retrying job after error: {error} (sleeping {cooldown} seconds...)")
+                error.retries += 1
+                await asyncio.sleep(cooldown)
+                return None
+            else:
+                return error
+        else:
+            return None
 
     def _jobname(self, jobname: str):
         return self._job_prefix + jobname

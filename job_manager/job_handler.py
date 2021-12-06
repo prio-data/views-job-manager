@@ -154,7 +154,7 @@ class JobHandler():
 
             if pending_succeeding:
                 # Recurse
-                self._locks_client.cleanup()
+                await self._locks_client.cleanup()
                 return await self.handle_jobs(jobs)
             else:
                 todo = deque()
@@ -178,7 +178,7 @@ class JobHandler():
                 status, content = await self._do_job(job)
 
             except asyncio.exceptions.TimeoutError:
-                await self._locks_client.set_error(job, 500, f"{job} timed out")
+                await self._locks_client.set_error(job, 503, f"{job} timed out")
                 break
 
             if status == 200:

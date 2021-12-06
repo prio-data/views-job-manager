@@ -59,11 +59,10 @@ async def get_job(
 
     for job in requested_jobs:
         try:
-            error = await locks_client.error_code_and_message(job)
+            error = await locks_client.retry_error(job, settings.MAX_TIMEOUT_RETRIES, settings.TIMEOUT_COOLDOWN)
             assert error is None
         except AssertionError:
-            code, message = error
-            return Response(f"{job} returned {message}", status_code = code)
+            return Response(f"{job} returned {error}", status_code = error.http_status_code)
 
     try:
         content = await cache_client.get(requested_jobs[-1])
