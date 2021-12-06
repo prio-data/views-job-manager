@@ -138,7 +138,8 @@ class JobHandler():
                 retries += 1
 
                 if (retries % self._check_errors_every) == 0:
-                    if (error := self._locks_client.get_error(pending)) is not None:
+                    error = await self._locks_client.get_error(pending)
+                    if error is not None:
                         logger.critical(f"{pending} returned an error: {error}")
                         pending_succeeding = False
 
