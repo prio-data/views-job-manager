@@ -1,147 +1,86 @@
 
-import re
+from typing import List
 import logging
-from collections import deque
-from datetime import datetime
-import asyncio
-import asyncio_redis
-import redis
-import fastapi
-from . import settings, keys, parse, remotes, cache
+from fastapi import Depends, Response, FastAPI, BackgroundTasks
+from . import settings, parse, remotes, caching, job_handler, redis_locks
 
 logging.basicConfig(level = getattr(logging, settings.LOG_LEVEL))
 logger = logging.getLogger(__name__)
 redis_logger = logging.getLogger("asyncio_redis")
 redis_logger.setLevel(logging.WARNING)
 
-app = fastapi.FastAPI()
+app = FastAPI()
 
-Client = lambda: asyncio_redis.Pool.create(host = settings.REDIS_HOST, port = settings.REDIS_PORT, db = settings.REDIS_DB)
-cache_client = cache.RESTCache(settings.DATA_CACHE_URL+"/files")
-api_client = remotes.Api(settings.ROUTER_URL)
+get_api = lambda: remotes.Api(settings.ROUTER_URL)
+get_cache = lambda: caching.RESTCache(settings.DATA_CACHE_URL+"/files")
+get_locks = lambda: redis_locks.RedisLocks(settings.REDIS_HOST, settings.REDIS_PORT, settings.REDIS_DB, settings.REDIS_ERROR_KEY_PREFIX, settings.REDIS_JOB_KEY_PREFIX)
 
-async def request_job_computation(client_creator, subjobs):
-
-    async def do_job(path):
-        logger.info(f"Getting {path}")
-        return await api_client.touch(path)
-
-    client = await client_creator()
-    todo = deque()
-
-    pending = None
-    for job in subjobs[::-1]:
-        is_cached = await cache_client.exists(job)
-
-        could_lock = await client.set(keys.job(job),str(datetime.now()), only_if_not_exists = True, expire = 400)
-        in_progress = could_lock is None
-
-        if is_cached or in_progress:
-            if is_cached:
-                await client.delete([keys.job(job)])
-                logger.info(f"{job} was cached")
-            if in_progress:
-                logger.info(f"{job} was in progress")
-                pending = job
-            break
-        todo.appendleft(job)
-
-    if pending is not None and len(todo) > 0:
-        logger.debug(f"Pending jobs: {pending}")
-        logger.debug(f"Jobs todo: {todo}")
-
-        pending_was_finished = False
-        retries = 0
-        while not pending_was_finished:
-            retries += 1
-            if retries > settings.MAX_RETRIES:
-                logger.critical(f"Exceeded max retries while waiting for {pending}")
-                todo = []
-                break
-
-            logger.info(f"Waiting for {pending}")
-            pending_was_finished = await cache_client.exists(pending)
-            await asyncio.sleep(1)
-
-        return await request_job_computation(client_creator, subjobs)
-
-    for job in todo:
-        try:
-            status, content = await do_job(job)
-
-        except asyncio.exceptions.TimeoutError:
-            logger.critical(f"Job {job} timed out!!")
-            await client.set(keys.error(job), f"500: {job} timed out", expire = 400)
-            todo = []
-
-        if status == 200:
-            logger.info(f"Caching {job}")
-            await cache_client.set(job, content)
-        else:
-            await client.set(keys.error(job), f"{status}: {content}", expire = 400)
-
-        await client.delete([keys.job(job)])
-
-    client.close()
-
-async def with_redis_client():
+def with_rest_cache():
     try:
-        connection = await Client()
-        yield connection
+        client = get_cache()
+        yield client
     finally:
-        connection.close()
+        pass
+
+async def with_locks_client():
+    try:
+        client = get_locks()
+        yield client
+    finally:
+        await client.close()
+
+async def dispatch_jobs(jobs: List[str]):
+    try:
+        api, cache, locks = get_api() ,get_cache(), get_locks()
+        handler = job_handler.JobHandler(api, cache, locks,
+                    settings.RETRY_SLEEP, settings.MAX_RETRIES, settings.CHECK_ERRORS_EVERY)
+
+        await handler.handle_jobs(jobs)
+    finally:
+        await locks.cleanup()
+        await locks.close()
 
 @app.get("/job/")
-async def list_jobs(redis_client: redis.Redis = fastapi.Depends(with_redis_client)):
-    jobs = await redis_client.keys(keys.job("*"))
-    return {"jobs": [*jobs]}
+async def list_jobs(locks: redis_locks.RedisLocks = Depends(with_locks_client)):
+    jobs = await locks.jobs()
+    return {"jobs": jobs}
 
 @app.get("/job/{path:path}")
 async def get_job(
         path: str,
-        background_tasks: fastapi.BackgroundTasks,
-        redis_client: asyncio_redis.Pool = fastapi.Depends(with_redis_client)):
+        background_tasks: BackgroundTasks,
+        locks_client: redis_locks.RedisLocks = Depends(with_locks_client),
+        cache_client: caching.RESTCache = Depends(with_rest_cache)):
 
-    requested_jobs = parse.subjobs(path)
+    try:
+        requested_jobs = parse.subjobs(path)
+    except parse.ParsingError:
+        return Response(content = f"Could not parse as job path: {path}", status_code = 404)
 
-    # Return error message
     for job in requested_jobs:
         try:
-            error = await redis_client.get(keys.error(job))
-            assert error is not None
+            error = await locks_client.retry_error(job, settings.MAX_TIMEOUT_RETRIES, settings.TIMEOUT_COOLDOWN)
+            assert error is None
         except AssertionError:
-            pass
-        else:
-            code = re.search("[0-9]{3}", error)
-            code = int(code[0]) if code else 500
-            try:
-                code, message = error.split(":")
-            except ValueError:
-                code, message = "500", error
-            return fastapi.Response(f"{job} returned {message}", status_code = int(code))
+            return Response(f"{job} returned {error}", status_code = error.http_status_code)
 
-    # Return from cache
     try:
         content = await cache_client.get(requested_jobs[-1])
-    except cache.NotCached:
+    except caching.NotCached:
         pass
     else:
-        return fastapi.Response(content)
+        return Response(content)
 
-    background_tasks.add_task(request_job_computation, Client, requested_jobs)
+    background_tasks.add_task(dispatch_jobs, requested_jobs)
 
-    return fastapi.Response(status_code = 202)
+    return Response(status_code = 202)
 
 @app.get("/errors/")
-async def get_errors(redis_client: asyncio_redis.Pool = fastapi.Depends(with_redis_client)):
-    async def get_error(client, k):
-        return await client.get(keys.error(k))
-
-    errors = await redis_client.smembers("jobman/errors")
-    messages = await asyncio.gather(*[get_error(redis_client, e) for e in errors])
-
-    return dict(zip(errors, messages))
+async def get_errors(locks_client: redis_locks.RedisLocks = Depends(with_locks_client)):
+    errors = await locks_client.errors()
+    return {"errors": errors}
 
 @app.get("/errors/purge/")
-async def delete_errors(redis_client: redis.Redis = fastapi.Depends(with_redis_client)):
-    return fastapi.Response("")
+async def delete_errors(locks_client: redis_locks.RedisLocks = Depends(with_locks_client)):
+    await locks_client.clear_errors()
+    return Response(status_code = 204)
